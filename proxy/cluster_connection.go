@@ -230,13 +230,14 @@ func NewClusterConnection(lifetime context.Context, connConfig config.ClusterCon
 }
 
 func createClient(lifetime context.Context, connectionName string, transportCfg config.ClusterDefinition, directionLabel string) (closableClientConn, error) {
+	clientOpts := transportCfg.GRPCClient.ToClientOptions()
 	switch transportCfg.ConnectionType {
 	case config.ConnTypeTCP:
-		return buildTLSTCPClient(lifetime, transportCfg.TcpClient.ConnectionString, transportCfg.TcpClient.TLSConfig, directionLabel)
+		return buildTLSTCPClient(lifetime, transportCfg.TcpClient.ConnectionString, transportCfg.TcpClient.TLSConfig, directionLabel, clientOpts)
 	case config.ConnTypeMuxClient, config.ConnTypeMuxServer:
 		return grpcutil.NewMultiClientConn(lifetime, fmt.Sprintf("client-conn-%s", connectionName),
 			// TLS is handled by the mux connection, so tlsConfig will always be nil
-			grpcutil.MakeDialOptions(nil, metrics.GetGRPCClientMetrics(directionLabel))...)
+			grpcutil.MakeDialOptions(nil, metrics.GetGRPCClientMetrics(directionLabel), clientOpts)...)
 	default:
 		return nil, errors.New("invalid connection type")
 	}
@@ -289,7 +290,7 @@ func createTCPServer(lifetime context.Context, c serverConfiguration) (contextAw
 
 // buildTLSTCPClient creates a grpc.ClientConn using the provided configuration. It schedules a goroutine that closes
 // the grpc.ClientConn when the provided lifetime ends.
-func buildTLSTCPClient(lifetime context.Context, serverAddress string, tlsCfg encryption.TLSConfig, metricLabel string) (closableClientConn, error) {
+func buildTLSTCPClient(lifetime context.Context, serverAddress string, tlsCfg encryption.TLSConfig, metricLabel string, clientOpts grpcutil.ClientOptions) (closableClientConn, error) {
 	var parsedTLSCfg *tls.Config
 	if tlsCfg.IsEnabled() {
 		var err error
@@ -298,7 +299,7 @@ func buildTLSTCPClient(lifetime context.Context, serverAddress string, tlsCfg en
 			return nil, fmt.Errorf("config error when creating tls config: %w", err)
 		}
 	}
-	client, err := grpc.NewClient(serverAddress, grpcutil.MakeDialOptions(parsedTLSCfg, metrics.GetGRPCClientMetrics(metricLabel))...)
+	client, err := grpc.NewClient(serverAddress, grpcutil.MakeDialOptions(parsedTLSCfg, metrics.GetGRPCClientMetrics(metricLabel), clientOpts)...)
 	if err != nil {
 		return nil, fmt.Errorf("could not create inbound client: %w", err)
 	}

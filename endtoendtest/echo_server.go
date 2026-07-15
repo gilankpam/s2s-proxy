@@ -148,7 +148,7 @@ func NewEchoServer(
 		}
 	}
 	client, err := grpc.NewClient(clientAddress,
-		grpcutil.MakeDialOptions(parsedTLSCfg, metrics.GetStandardGRPCClientInterceptor("local"))...)
+		grpcutil.MakeDialOptions(parsedTLSCfg, metrics.GetStandardGRPCClientInterceptor("local"), grpcutil.ClientOptions{})...)
 	if err != nil {
 		panic(err)
 	}

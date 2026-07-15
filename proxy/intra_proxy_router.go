@@ -555,7 +555,7 @@ func (m *intraProxyManager) ensurePeer(
 	} else {
 		logger.Debug("ensurePeer TLS disabled")
 	}
-	dialOpts := grpcutil.MakeDialOptions(parsedTLSCfg, metrics.GetGRPCClientMetrics("intra_proxy"))
+	dialOpts := grpcutil.MakeDialOptions(parsedTLSCfg, metrics.GetGRPCClientMetrics("intra_proxy"), grpcutil.ClientOptions{})
 
 	proxyAddresses, ok := m.shardManager.GetProxyAddress(peerNodeName)
 	if !ok {

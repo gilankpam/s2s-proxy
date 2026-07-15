@@ -204,9 +204,9 @@ func newPairedLocalClusterConnection(t *testing.T, isMux bool, loggers logging.L
 			config.ConnTypeMuxServer, remoteFVI, localFVI, a.remoteProxyOutbound, a.remoteTemporalAddr, a.remoteProxyOutbound, a.remoteProxyInbound), loggers)
 		require.NoError(t, err)
 	}
-	clientFromLocal, err := grpc.NewClient(a.localProxyOutbound, grpcutil.MakeDialOptions(nil, metrics.GetStandardGRPCClientInterceptor("outbound-local"))...)
+	clientFromLocal, err := grpc.NewClient(a.localProxyOutbound, grpcutil.MakeDialOptions(nil, metrics.GetStandardGRPCClientInterceptor("outbound-local"), grpcutil.ClientOptions{})...)
 	require.NoError(t, err)
-	clientFromRemote, err := grpc.NewClient(a.remoteProxyOutbound, grpcutil.MakeDialOptions(nil, metrics.GetStandardGRPCClientInterceptor("outbound-remote"))...)
+	clientFromRemote, err := grpc.NewClient(a.remoteProxyOutbound, grpcutil.MakeDialOptions(nil, metrics.GetStandardGRPCClientInterceptor("outbound-remote"), grpcutil.ClientOptions{})...)
 	require.NoError(t, err)
 	return &pairedLocalClusterConnection{
 		localTemporal:    localTemporal,

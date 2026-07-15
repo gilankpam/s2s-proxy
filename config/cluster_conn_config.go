@@ -1,10 +1,13 @@
 package config
 
 import (
+	"time"
+
 	"github.com/temporalio/temporal-proxy/pkg/validation"
 
 	"github.com/temporalio/s2s-proxy/collect"
 	"github.com/temporalio/s2s-proxy/encryption"
+	"github.com/temporalio/s2s-proxy/transport/grpcutil"
 )
 
 // Looking for examples? Check ./develop/sample-cluster-conn-config.yaml
@@ -44,11 +47,30 @@ type (
 	ConnectionType string
 
 	ClusterDefinition struct {
-		ConnectionType ConnectionType `yaml:"connectionType"`
-		TcpClient      TCPTLSInfo     `yaml:"tcpClient"`
-		TcpServer      TCPTLSInfo     `yaml:"tcpServer"`
-		MuxCount       int            `yaml:"muxCount"`
-		MuxAddressInfo TCPTLSInfo     `yaml:"muxAddressInfo"`
+		ConnectionType ConnectionType   `yaml:"connectionType"`
+		TcpClient      TCPTLSInfo       `yaml:"tcpClient"`
+		TcpServer      TCPTLSInfo       `yaml:"tcpServer"`
+		MuxCount       int              `yaml:"muxCount"`
+		MuxAddressInfo TCPTLSInfo       `yaml:"muxAddressInfo"`
+		GRPCClient     GRPCClientConfig `yaml:"grpcClient"`
+	}
+
+	// GRPCClientConfig tunes the gRPC client this proxy uses to reach the cluster's local
+	// Temporal frontend (and, for the mux transports, the multiplexed client). All fields are
+	// optional; zero values fall back to the grpcutil defaults. Tuning these matters when the
+	// proxy runs behind a service mesh (Istio/Envoy) whose sidecar cycles or resets connections.
+	// Durations are expressed in milliseconds to stay consistent with the rest of this config.
+	GRPCClientConfig struct {
+		// ConnectTimeoutMs bounds a single connection attempt. Lower it (e.g. 5000) behind a
+		// mesh sidecar so a reset connection reconnects quickly instead of stalling ~20s.
+		ConnectTimeoutMs int `yaml:"connectTimeoutMs"`
+		// KeepAliveTimeMs is the interval between client keepalive pings (0 = default).
+		KeepAliveTimeMs int `yaml:"keepAliveTimeMs"`
+		// KeepAliveTimeoutMs is the ping-ack timeout before the connection is considered dead.
+		KeepAliveTimeoutMs int `yaml:"keepAliveTimeoutMs"`
+		// KeepAlivePermitWithoutStream keeps idle connections warm by pinging with no active
+		// RPCs. Enable only if the server's keepalive enforcement policy allows it.
+		KeepAlivePermitWithoutStream bool `yaml:"keepAlivePermitWithoutStream"`
 	}
 
 	TCPTLSInfo struct {
@@ -68,6 +90,17 @@ const (
 	ConnTypeMuxServer ConnectionType = "mux-server"
 	ConnTypeMuxClient ConnectionType = "mux-client"
 )
+
+// ToClientOptions converts the YAML-facing config into grpcutil.ClientOptions, translating the
+// millisecond fields into durations. Zero values are preserved so grpcutil applies its defaults.
+func (c GRPCClientConfig) ToClientOptions() grpcutil.ClientOptions {
+	return grpcutil.ClientOptions{
+		ConnectTimeout:               time.Duration(c.ConnectTimeoutMs) * time.Millisecond,
+		KeepAliveTime:                time.Duration(c.KeepAliveTimeMs) * time.Millisecond,
+		KeepAliveTimeout:             time.Duration(c.KeepAliveTimeoutMs) * time.Millisecond,
+		KeepAlivePermitWithoutStream: c.KeepAlivePermitWithoutStream,
+	}
+}
 
 func (config *StringTranslator) AsLocalToRemoteBiMap() (collect.StaticBiMap[string, string], error) {
 	if config.cachedBiMap != nil {
