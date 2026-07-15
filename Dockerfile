@@ -19,7 +19,7 @@ WORKDIR /s2s-proxy
 # Dependency manifests
 COPY go.mod go.sum ./
 
-RUN --mount=type=cache,target=/go/pkg/mod go mod download
+RUN go mod download
 
 # Source code
 COPY . .
