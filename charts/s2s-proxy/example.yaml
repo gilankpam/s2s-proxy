@@ -124,6 +124,14 @@ spec:
           env:
             - name: CONFIG_YML
               value: "/config/config.yaml"
+            # Identifies this pod in metrics and, later, in admin responses.
+            # Without it every replica reports its container hostname.
+            # That is the pod name anyway.
+            # Being explicit survives a change to how the container is named.
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
           livenessProbe:
             httpGet:
               path: /health

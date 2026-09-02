@@ -304,7 +304,7 @@ func TestNewProxyReportsConfigurationErrors(t *testing.T) {
 	loggers := logging.NewLoggerProvider(log.NewTestLogger(), config.NewMockConfigProvider(config.S2SProxyConfig{}))
 
 	t.Run("no cluster connections", func(t *testing.T) {
-		_, err := NewProxy(config.NewMockConfigProvider(config.S2SProxyConfig{}), loggers)
+		_, err := NewProxy(config.NewMockConfigProvider(config.S2SProxyConfig{}), loggers, Identity{Version: "test", MemberID: "pod-test"})
 		require.EqualError(t, err, "cannot create proxy: clusterConnections is empty")
 	})
 
@@ -316,7 +316,7 @@ func TestNewProxyReportsConfigurationErrors(t *testing.T) {
 
 		_, err := NewProxy(config.NewMockConfigProvider(config.S2SProxyConfig{
 			ClusterConnections: []config.ClusterConnConfig{broken},
-		}), loggers)
+		}), loggers, Identity{Version: "test", MemberID: "pod-test"})
 		require.Error(t, err)
 		require.Contains(t, err.Error(), `cannot create cluster connection "broken"`)
 	})
@@ -334,7 +334,7 @@ func TestNewProxyReportsConfigurationErrors(t *testing.T) {
 		// listeners and the error names the field that caused it.
 		_, err := NewProxy(config.NewMockConfigProvider(config.S2SProxyConfig{
 			ClusterConnections: []config.ClusterConnConfig{cc},
-		}), loggers)
+		}), loggers, Identity{Version: "test", MemberID: "pod-test"})
 		require.ErrorContains(t, err, "cannot create proxy: invalid config: ")
 		require.ErrorContains(t, err, "clusterConnections[0].encryption.default: uri: invalid key URI: vault://typo")
 	})
@@ -350,7 +350,7 @@ func TestNewProxyRejectsDuplicateClusterConnectionNames(t *testing.T) {
 
 	_, err := NewProxy(config.NewMockConfigProvider(config.S2SProxyConfig{
 		ClusterConnections: []config.ClusterConnConfig{first, second},
-	}), loggers)
+	}), loggers, Identity{Version: "test", MemberID: "pod-test"})
 	require.EqualError(t, err, `cannot create proxy: duplicate cluster connection name "same"`)
 }
 

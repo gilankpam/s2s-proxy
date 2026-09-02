@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"net/http"
 	_ "net/http/pprof"
+	"os"
 	"strings"
+	"time"
 
 	"go.temporal.io/server/common/log/tag"
 
@@ -33,11 +35,41 @@ type (
 		localHealthCheckServer  *http.Server
 		remoteHealthCheckServer *http.Server
 		metricsServer           *http.Server
+		version                 string
+		memberID                string
+		startTime               time.Time
 		logProvider             logging.LoggerProvider
+	}
+
+	// Identity is who this process says it is.
+	//
+	// MemberID must differ between processes.
+	// It is supplied rather than read from the shared config file.
+	// A value in that file would be identical on every replica.
+	Identity struct {
+		Version  string
+		MemberID string
 	}
 )
 
-func NewProxy(configProvider config.ConfigProvider, logProvider logging.LoggerProvider) (*Proxy, error) {
+// DefaultIdentity derives this process's identity from its environment.
+// $POD_NAME comes first.
+// A Kubernetes deployment can then be explicit.
+// The hostname is the fallback.
+// Inside a pod that is the pod name.
+func DefaultIdentity(version string) Identity {
+	id := Identity{Version: version}
+	if name := os.Getenv("POD_NAME"); name != "" {
+		id.MemberID = name
+		return id
+	}
+	if host, err := os.Hostname(); err == nil {
+		id.MemberID = host
+	}
+	return id
+}
+
+func NewProxy(configProvider config.ConfigProvider, logProvider logging.LoggerProvider, identity Identity) (*Proxy, error) {
 	s2sConfig := configProvider.GetS2SProxyConfig()
 	if err := s2sConfig.Validate(); err != nil {
 		return nil, fmt.Errorf("cannot create proxy: invalid config: %w", err)
@@ -49,6 +81,9 @@ func NewProxy(configProvider config.ConfigProvider, logProvider logging.LoggerPr
 		cancel:             cancel,
 		clusterConnections: make(map[migrationId]*ClusterConnection, len(s2sConfig.ClusterConnections)),
 		logProvider:        logProvider,
+		version:            identity.Version,
+		memberID:           identity.MemberID,
+		startTime:          time.Now(),
 	}
 	if len(s2sConfig.ClusterConnections) == 0 {
 		cancel()
@@ -82,8 +117,12 @@ func NewProxy(configProvider config.ConfigProvider, logProvider logging.LoggerPr
 	}
 
 	metrics.NewProxyCount.Inc()
+	metrics.ProxyBuildInfo.WithLabelValues(identity.Version).Set(1)
 	return proxy, nil
 }
+
+// MemberID reports how this process identifies itself.
+func (s *Proxy) MemberID() string { return s.memberID }
 
 func (s *Proxy) startHealthCheckHandler(lifetime context.Context, healthChecker HealthChecker, cfg config.HealthCheckConfig) (*http.Server, error) {
 	if cfg.Protocol != config.HTTP {
