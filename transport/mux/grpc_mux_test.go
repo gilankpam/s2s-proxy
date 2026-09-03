@@ -33,7 +33,7 @@ func TestGRPCMux(t *testing.T) {
 			ConnectionString: "127.0.0.1:0",
 		},
 	}
-	receivingClient, err := grpcutil.NewMultiClientConn(t.Context(), "receivingClientConns", grpcutil.MakeDialOptions(nil, metrics.GRPCOutboundClientMetrics)...)
+	receivingClient, err := grpcutil.NewMultiClientConn(t.Context(), "receivingClientConns", grpcutil.MakeDialOptions(nil, metrics.GRPCOutboundClientMetrics, grpcutil.ClientOptions{})...)
 	receivingServerDefn := grpc.NewServer()
 	receivingEas := &testservices.EchoAdminService{
 		ServiceName: "receivingServerDefn",
@@ -62,7 +62,7 @@ func TestGRPCMux(t *testing.T) {
 			ConnectionString: "127.0.0.1:0",
 		},
 	}
-	establishingClient, err := grpcutil.NewMultiClientConn(t.Context(), "establishingClientConns", grpcutil.MakeDialOptions(nil, metrics.GRPCOutboundClientMetrics)...)
+	establishingClient, err := grpcutil.NewMultiClientConn(t.Context(), "establishingClientConns", grpcutil.MakeDialOptions(nil, metrics.GRPCOutboundClientMetrics, grpcutil.ClientOptions{})...)
 	require.NoError(t, err)
 	establishingServer := grpc.NewServer()
 	establishingEas := &testservices.EchoAdminService{

@@ -18,6 +18,15 @@ clusterConnections:
           remoteCAPath: ""
           caServerName: ""
           skipCAVerification: true
+      # grpcClient tunes the gRPC client used to reach this cluster's Temporal frontend.
+      # All fields are optional (0 = built-in default). Recommended when the proxy runs behind
+      # a service mesh (Istio/Envoy): the sidecar can reset idle connections, which otherwise
+      # turns each reconnect into a multi-second stall (bounded by connectTimeoutMs).
+      grpcClient:
+        connectTimeoutMs: 5000              # default 20000; lower so a reset reconnects quickly
+        keepAliveTimeMs: 30000              # default 30000
+        keepAliveTimeoutMs: 10000           # default 10000
+        keepAlivePermitWithoutStream: true  # keep idle conns warm; only if server enforcement allows
     remote:
       connectionType: "mux-server" # One mux represents both inbound and outbound
       muxCount: 10

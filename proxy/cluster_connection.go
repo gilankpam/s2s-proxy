@@ -97,6 +97,10 @@ type (
 		directionLabel string
 		// client is the ClientConnInterface that the server will use to make calls.
 		client closableClientConn
+		// workflowClient, if set, is a dedicated connection used only for WorkflowService forwards
+		// so that UI/visibility queries don't contend for HTTP/2 stream capacity on `client` with
+		// the high-volume replication (AdminService) traffic. Falls back to `client` when nil.
+		workflowClient closableClientConn
 		// managedClient is updated by the multi-mux-manager that also owns the server. Needs some more cleanup.
 		managedClient closableClientConn
 		// nsTranslations and saTranslations are used to translate namespace and search attribute names.
@@ -132,6 +136,13 @@ func NewClusterConnection(lifetime context.Context, connConfig config.ClusterCon
 		return nil, err
 	}
 	cc.outboundClient, err = createClient(lifetime, sanitizedConnectionName, connConfig.Remote, "outbound")
+	if err != nil {
+		return nil, err
+	}
+	// Dedicated frontend connection used only for WorkflowService forwards on the inbound server,
+	// so visibility/UI queries get their own HTTP/2 stream budget instead of contending with the
+	// high-volume replication traffic multiplexed on inboundClient.
+	inboundWorkflowClient, err := createClient(lifetime, sanitizedConnectionName, connConfig.Local, "inbound")
 	if err != nil {
 		return nil, err
 	}
@@ -185,6 +196,7 @@ func NewClusterConnection(lifetime context.Context, connConfig config.ClusterCon
 		clusterDefinition: connConfig.Remote,
 		directionLabel:    "inbound",
 		client:            cc.inboundClient,
+		workflowClient:    inboundWorkflowClient,
 		managedClient:     cc.outboundClient,
 		nsTranslations:    nsTranslations.Inverse(),
 		saTranslations:    saTranslations.Inverse(),
@@ -230,13 +242,14 @@ func NewClusterConnection(lifetime context.Context, connConfig config.ClusterCon
 }
 
 func createClient(lifetime context.Context, connectionName string, transportCfg config.ClusterDefinition, directionLabel string) (closableClientConn, error) {
+	clientOpts := transportCfg.GRPCClient.ToClientOptions()
 	switch transportCfg.ConnectionType {
 	case config.ConnTypeTCP:
-		return buildTLSTCPClient(lifetime, transportCfg.TcpClient.ConnectionString, transportCfg.TcpClient.TLSConfig, directionLabel)
+		return buildTLSTCPClient(lifetime, transportCfg.TcpClient.ConnectionString, transportCfg.TcpClient.TLSConfig, directionLabel, clientOpts)
 	case config.ConnTypeMuxClient, config.ConnTypeMuxServer:
 		return grpcutil.NewMultiClientConn(lifetime, fmt.Sprintf("client-conn-%s", connectionName),
 			// TLS is handled by the mux connection, so tlsConfig will always be nil
-			grpcutil.MakeDialOptions(nil, metrics.GetGRPCClientMetrics(directionLabel))...)
+			grpcutil.MakeDialOptions(nil, metrics.GetGRPCClientMetrics(directionLabel), clientOpts)...)
 	default:
 		return nil, errors.New("invalid connection type")
 	}
@@ -289,7 +302,7 @@ func createTCPServer(lifetime context.Context, c serverConfiguration) (contextAw
 
 // buildTLSTCPClient creates a grpc.ClientConn using the provided configuration. It schedules a goroutine that closes
 // the grpc.ClientConn when the provided lifetime ends.
-func buildTLSTCPClient(lifetime context.Context, serverAddress string, tlsCfg encryption.TLSConfig, metricLabel string) (closableClientConn, error) {
+func buildTLSTCPClient(lifetime context.Context, serverAddress string, tlsCfg encryption.TLSConfig, metricLabel string, clientOpts grpcutil.ClientOptions) (closableClientConn, error) {
 	var parsedTLSCfg *tls.Config
 	if tlsCfg.IsEnabled() {
 		var err error
@@ -298,7 +311,7 @@ func buildTLSTCPClient(lifetime context.Context, serverAddress string, tlsCfg en
 			return nil, fmt.Errorf("config error when creating tls config: %w", err)
 		}
 	}
-	client, err := grpc.NewClient(serverAddress, grpcutil.MakeDialOptions(parsedTLSCfg, metrics.GetGRPCClientMetrics(metricLabel))...)
+	client, err := grpc.NewClient(serverAddress, grpcutil.MakeDialOptions(parsedTLSCfg, metrics.GetGRPCClientMetrics(metricLabel), clientOpts)...)
 	if err != nil {
 		return nil, fmt.Errorf("could not create inbound client: %w", err)
 	}
@@ -362,7 +375,11 @@ func buildProxyServer(c serverConfiguration, tlsConfig encryption.TLSConfig, obs
 	if c.aclPolicy != nil {
 		accessControl = auth.NewAccesControl(c.aclPolicy.AllowedNamespaces)
 	}
-	workflowServiceImpl := NewWorkflowServiceProxyServer("inboundWorkflowService", workflowservice.NewWorkflowServiceClient(c.client),
+	wfClient := c.client
+	if c.workflowClient != nil {
+		wfClient = c.workflowClient
+	}
+	workflowServiceImpl := NewWorkflowServiceProxyServer("inboundWorkflowService", workflowservice.NewWorkflowServiceClient(wfClient),
 		accessControl, c.loggers)
 	adminservice.RegisterAdminServiceServer(server, adminServiceImpl)
 	workflowservice.RegisterWorkflowServiceServer(server, workflowServiceImpl)
